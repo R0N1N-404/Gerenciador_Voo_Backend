@@ -2,14 +2,14 @@ package com.example.Gerenciador_Voo.services;
 
 import com.example.Gerenciador_Voo.data.aeronave.AeronaveRepository;
 import com.example.Gerenciador_Voo.data.piloto.PilotoRepository;
+import com.example.Gerenciador_Voo.data.pista.Pista;
 import com.example.Gerenciador_Voo.data.pista.PistaRepository;
 import com.example.Gerenciador_Voo.data.requisicao.*;
 import com.example.Gerenciador_Voo.data.requisicao.requisicaoDto.RequisicaoResponseDto;
+import com.example.Gerenciador_Voo.data.requisicao.requisicaoDto.RequisicaoCreateDto;
 import com.example.Gerenciador_Voo.data.requisicao.requisicaoEnum.StatusRequisicao;
 import com.example.Gerenciador_Voo.data.torre.TorreRepository;
-import com.example.Gerenciador_Voo.exceptions.exceptions.PistaOcupadaException;
 import com.example.Gerenciador_Voo.exceptions.exceptions.RequisicaoInvalidaException;
-import com.example.Gerenciador_Voo.data.requisicao.requisicaoDto.RequisicaoCreateDto;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -25,7 +25,22 @@ public class RequisicaoService {
     @Autowired private PistaRepository pistaRepository;
     @Autowired private TorreRepository torreRepository;
 
+
+    // CRIAR REQUISIÇÃO
     public Requisicao criar(Long pilotoId, RequisicaoCreateDto dto) {
+
+        if (requisicaoRepository.existsByPilotoUsuarioIdAndStatus(
+                pilotoId, StatusRequisicao.PENDENTE)) {
+            throw new RequisicaoInvalidaException(
+                    "Você já possui uma requisição pendente.");
+        }
+
+        if (requisicaoRepository.existsByAeronaveIdAndStatus(
+                dto.getAeronaveId(), StatusRequisicao.PENDENTE)) {
+            throw new RequisicaoInvalidaException(
+                    "Esta aeronave já possui uma requisição pendente.");
+        }
+
         Requisicao r = new Requisicao();
 
         r.setPiloto(pilotoRepository.findById(pilotoId)
@@ -35,6 +50,11 @@ public class RequisicaoService {
                 .orElseThrow(() -> new RequisicaoInvalidaException("Aeronave não encontrada")));
 
         r.setTipoOperacao(dto.getTipoOperacao());
+
+        Pista pista = pistaRepository.findById(1L)
+                .orElseThrow(() -> new RequisicaoInvalidaException("Pista não encontrada"));
+
+        r.setPista(pista);
         r.setPrioridade(dto.getPrioridade());
         r.setObservacao(dto.getObservacao());
         r.setStatus(StatusRequisicao.PENDENTE);
@@ -43,85 +63,124 @@ public class RequisicaoService {
         return requisicaoRepository.save(r);
     }
 
+
+    // LISTAR REQUISIÇÕES PENDENTES DA TORRE
     public List<Requisicao> listarPendentes() {
         return requisicaoRepository.findByStatus(StatusRequisicao.PENDENTE);
     }
 
+
+    // LISTAR TODAS AS REQUISIÇÕES DO PILOTO, EXCETO CANCELADAS
     public List<RequisicaoResponseDto> listarPorPiloto(Long pilotoId) {
 
-        System.out.println("1 - Entrou no listarPorPiloto");
-        System.out.println("2 - ID recebido: " + pilotoId);
-
-        List<Requisicao> requisicoes =
-                requisicaoRepository.findByPilotoUsuarioId(pilotoId);
-
-        System.out.println("3 - Consulta executada!");
-        System.out.println("4 - Registros encontrados: " + requisicoes.size());
-
-        List<RequisicaoResponseDto> resultado = requisicoes.stream()
+        return requisicaoRepository
+                .findByPilotoUsuarioIdAndStatusNot(
+                        pilotoId, StatusRequisicao.CANCELADA)
+                .stream()
                 .map(RequisicaoResponseDto::new)
                 .toList();
-
-        System.out.println("5 - DTOs construídos!");
-
-        return resultado;
     }
 
-    public Requisicao autorizar(Long requisicaoId, Long torreId, Long pistaId) {
+
+    // LISTAR TODAS AS REQUISIÇÕES DA TORRE
+    public List<RequisicaoResponseDto> getAll() {
+
+        return requisicaoRepository.findAll()
+                .stream()
+                .map(RequisicaoResponseDto::new)
+                .toList();
+    }
+
+
+    // AUTORIZAR REQUISIÇÃO
+    public Requisicao autorizar(Long requisicaoId, Long torreId) {
+
         Requisicao r = buscarOuFalhar(requisicaoId);
 
         if (r.getStatus() != StatusRequisicao.PENDENTE) {
-            throw new RequisicaoInvalidaException("Só é possível autorizar requisições PENDENTES");
+            throw new RequisicaoInvalidaException(
+                    "Só é possível autorizar requisições PENDENTES");
         }
 
-        boolean pistaOcupada = requisicaoRepository.existsByPistaIdAndStatus(pistaId, StatusRequisicao.AUTORIZADA);
-        if (pistaOcupada) {
-            throw new PistaOcupadaException("A pista já está ocupada por outra operação");
-        }
-
-        r.setPista(pistaRepository.findById(pistaId)
-                .orElseThrow(() -> new RequisicaoInvalidaException("Pista não encontrada")));
         r.setTorre(torreRepository.findById(torreId)
                 .orElseThrow(() -> new RequisicaoInvalidaException("Torre não encontrada")));
+
         r.setStatus(StatusRequisicao.AUTORIZADA);
         r.setAutorizadaEm(LocalDateTime.now());
+
         return requisicaoRepository.save(r);
     }
 
+
+    // RECUSAR REQUISIÇÃO
     public Requisicao recusar(Long requisicaoId, String motivo) {
+
         Requisicao r = buscarOuFalhar(requisicaoId);
+
         if (r.getStatus() != StatusRequisicao.PENDENTE) {
-            throw new RequisicaoInvalidaException("Só é possível recusar requisições PENDENTES");
+            throw new RequisicaoInvalidaException(
+                    "Só é possível recusar requisições PENDENTES");
         }
+
         r.setStatus(StatusRequisicao.RECUSADA);
         r.setObservacao(motivo);
         r.setRecusadaEm(LocalDateTime.now());
+
         return requisicaoRepository.save(r);
     }
 
+
+    // CONCLUIR REQUISIÇÃO
     public Requisicao concluir(Long requisicaoId) {
+
         Requisicao r = buscarOuFalhar(requisicaoId);
+
         if (r.getStatus() != StatusRequisicao.AUTORIZADA) {
-            throw new RequisicaoInvalidaException("Só é possível concluir requisições AUTORIZADAS");
+            throw new RequisicaoInvalidaException(
+                    "Só é possível concluir requisições AUTORIZADAS");
         }
+
         r.setStatus(StatusRequisicao.CONCLUIDA);
         r.setConcluidaEm(LocalDateTime.now());
+
         return requisicaoRepository.save(r);
-        // a pista fica livre automaticamente
     }
 
+
+    // CANCELAR REQUISIÇÃO
     public Requisicao cancelar(Long requisicaoId) {
+
         Requisicao r = buscarOuFalhar(requisicaoId);
+
         if (r.getStatus() != StatusRequisicao.PENDENTE) {
-            throw new RequisicaoInvalidaException("Só é possível cancelar requisições PENDENTES");
+            throw new RequisicaoInvalidaException(
+                    "Só é possível cancelar requisições PENDENTES");
         }
+
         r.setStatus(StatusRequisicao.CANCELADA);
         r.setCanceladaEm(LocalDateTime.now());
+
         return requisicaoRepository.save(r);
     }
 
+
+    // LISTAR SOMENTE AS PENDENTES DE UM PILOTO
+    public List<RequisicaoResponseDto> listarPendentesPorPiloto(Long pilotoId) {
+
+        return requisicaoRepository
+                .findByPilotoUsuarioIdAndStatus(
+                        pilotoId, StatusRequisicao.PENDENTE)
+                .stream()
+                .map(RequisicaoResponseDto::new)
+                .toList();
+    }
+
+
+    // BUSCAR REQUISIÇÃO PELO ID
     private Requisicao buscarOuFalhar(Long id) {
+
         return requisicaoRepository.findById(id)
-                .orElseThrow(() -> new RequisicaoInvalidaException("Requisição não encontrada"));
+                .orElseThrow(() -> new RequisicaoInvalidaException(
+                        "Requisição não encontrada"));
     }
 }

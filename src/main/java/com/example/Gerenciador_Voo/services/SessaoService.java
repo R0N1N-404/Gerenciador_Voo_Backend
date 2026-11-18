@@ -43,8 +43,14 @@ public class SessaoService {
         );
     }
 
-    public void encerrarSessao(String token){
+    public void encerrarSessao(String token) {
+        if (token == null || !sessaoAtiva.containsKey(token)) {
+            throw new SessaoInvalidaException("Token inválido");
+        }
+
         sessaoAtiva.remove(token);
     }
+
+
 
 }

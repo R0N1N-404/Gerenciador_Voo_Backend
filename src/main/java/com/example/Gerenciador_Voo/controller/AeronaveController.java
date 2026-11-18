@@ -3,10 +3,9 @@ package com.example.Gerenciador_Voo.controller;
 
 import com.example.Gerenciador_Voo.data.aeronave.Aeronave;
 import com.example.Gerenciador_Voo.data.aeronave.AeronaveRepository;
-import com.example.Gerenciador_Voo.data.usuario.dto.CheckAuthDto;
-import com.example.Gerenciador_Voo.data.usuario.dto.TipoUsuario;
-import com.example.Gerenciador_Voo.exceptions.exceptions.AcessoNegadoException;
-import com.example.Gerenciador_Voo.services.SessaoService;
+import com.example.Gerenciador_Voo.data.requisicao.RequisicaoRepository;
+import com.example.Gerenciador_Voo.data.usuario.dto.TipoAcesso;
+import com.example.Gerenciador_Voo.services.VerificaToken;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -21,12 +20,18 @@ public class AeronaveController {
     private AeronaveRepository repository;
 
     @Autowired
-    private SessaoService sessaoService;
+    private RequisicaoRepository requisicaoRepository;
+
+    private final VerificaToken verificaToken;
+
+    public AeronaveController(VerificaToken verificaToken) {
+        this.verificaToken = verificaToken;
+    }
 
     @GetMapping
     public ResponseEntity<List<Aeronave>> getAll(@RequestHeader("Authorization") String token){
 
-        verificaToken(token);
+        verificaToken.verificaToken(token, TipoAcesso.AMBOS);
 
         List<Aeronave> aeronaves = repository.findAll();
 
@@ -40,7 +45,9 @@ public class AeronaveController {
     @GetMapping("/{id}")
     public ResponseEntity<Aeronave> getById(@PathVariable Long id
             ,@RequestHeader("Authorization") String token){
-        verificaToken(token);
+
+
+        verificaToken.verificaToken(token, TipoAcesso.AMBOS);
 
         Aeronave aeronave = repository.findById(id).orElse(null);
 
@@ -58,7 +65,7 @@ public class AeronaveController {
     public ResponseEntity<Aeronave> create(@RequestBody Aeronave aeronave
             ,@RequestHeader("Authorization") String token){
 
-        verificaToken(token);
+        verificaToken.verificaToken(token, TipoAcesso.TORRE);
 
         Aeronave dadosSalvos = repository.save(aeronave);
         return ResponseEntity.status(HttpStatus.CREATED).body(dadosSalvos);
@@ -67,7 +74,7 @@ public class AeronaveController {
     @PutMapping("{id}")
     public ResponseEntity<Aeronave> update(@PathVariable Long id, @RequestBody Aeronave dados, @RequestHeader("Authorization") String token){
 
-        verificaToken(token);
+        verificaToken.verificaToken(token, TipoAcesso.TORRE);
 
         return repository.findById(id).map(
                 existe -> {
@@ -82,27 +89,25 @@ public class AeronaveController {
     }
 
     @DeleteMapping("{id}")
-    public ResponseEntity<Void> delete(@PathVariable Long id, @RequestHeader("Authorization") String token){
+    public ResponseEntity<Void> delete(
+            @PathVariable Long id,
+            @RequestHeader("Authorization") String token) {
 
-        verificaToken(token);
+        verificaToken.verificaToken(token, TipoAcesso.TORRE);
 
-        if(!repository.existsById(id)){
+        if (!repository.existsById(id)) {
             return ResponseEntity.notFound().build();
         }
+
+        if (requisicaoRepository.existsByAeronaveId(id)) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+        }
+
         repository.deleteById(id);
+
         return ResponseEntity.noContent().build();
     }
 
 
-    public void verificaToken(String token) {
-        CheckAuthDto usuario = sessaoService.getUsuarioId(token);
 
-        if (usuario.tipo() != TipoUsuario.PILOTO &&
-                usuario.tipo() != TipoUsuario.TORRE) {
-
-            throw new AcessoNegadoException(
-                    "Tipo de usuário não autorizado."
-            );
-        }
-    }
 }

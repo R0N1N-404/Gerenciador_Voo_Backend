@@ -14,6 +14,7 @@ public class RequisicaoResponseDto {
     private final Long id;
     private final String pilotoNome;
     private final String aeronavePrefixo;
+    private final Long aeronaveId;
     private final TipoOperacao tipoOperacao;
     private final PrioridadeRequisicao prioridade;
     private final StatusRequisicao status;
@@ -26,6 +27,7 @@ public class RequisicaoResponseDto {
         this.id = r.getId();
         this.pilotoNome = r.getPiloto().getUsuario().getNome();
         this.aeronavePrefixo = r.getAeronave().getPrefixo();
+        this.aeronaveId = r.getAeronave().getId();
         this.tipoOperacao = r.getTipoOperacao();
         this.prioridade = r.getPrioridade();
         this.status = r.getStatus();
